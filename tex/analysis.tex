@@ -261,7 +261,7 @@ struct proc_dir_entry *proc_mkdir(const char *name, struct proc_dir_entry *paren
 На вход proc\_mkdir принимает name --- имя создаваемой директории; parent --- указатель на структуру proc\_dir\_entry, описывающую родительскую директорию, если равно NULL, то директория создаётся в корне.
 Системный вызов возвращает указатель на структуру proc\_dir\_entry созданной директории в случае успеха и NULL при неудаче.
 
-\subsection{системный вызов proc\_mkdir}
+\subsection{системный вызов proc\_create}
 
 Системный вызов proc\_create создаёт в /proc файл.
 Его заголовок представлен в листинге \ref{listing_proc_create}.

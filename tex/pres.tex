@@ -459,3 +459,68 @@ void free_proc_file_list(proc_file_list_t *list)
 }
 	\end{lstlisting}
 \end{center}
+
+\begin{center}
+	\begin{lstlisting}[label=listing_list_h1,caption=Файл list.h]
+# ifndef LIST_H
+
+# define LIST_H
+
+#include <linux/slab.h>
+#include <linux/string.h>
+	\end{lstlisting}
+\end{center}
+
+\begin{center}
+\begin{lstlisting}[label=listing_list_h2,caption=Файл list.h]
+# define MAX_FILE_LEN 100
+
+typedef struct proc_file_t
+{
+	const char *name;
+	struct proc_dir_entry *parent;
+} proc_file_t;
+
+typedef struct proc_file_list_t
+{
+	int size;
+	int len;
+	proc_file_t *array;
+	int k;
+} proc_file_list_t;
+
+int alloc_proc_file_list(proc_file_list_t *list, int size, int k);
+int proc_file_list_append(proc_file_list_t *list, const char *name, struct proc_dir_entry *pdentry);
+proc_file_t *proc_file_list_pop(proc_file_list_t *list);
+void free_proc_file_list(proc_file_list_t *list);
+
+# endif
+\end{lstlisting}
+\end{center}
+
+\begin{center}
+	\begin{lstlisting}[label=listing_help_h1,caption=Файл help.h]
+# ifndef HELP_H
+
+# define HELP_H
+
+static char *help_info = "Модуль ядра предназначен для взаимодействия с процессами,\n" \
+"которые удерживают открытым определённый файл\n\n\n" \
+"Для взаимодействия с модулем определён следующий порядок:\n\n" \
+"Файл /proc/finder/command предназначен для создания отчёта о файле\n" \
+"Отчёт создаётся командой: echo полное_имя_файла > command\n" \
+"После выполнения команды в дериктории /proc/finder создаётся директория\n" \
+"с таким же именем, как и отслеживаемый файл, в ней находится символическая ссылка\n" \
+\end{lstlisting}
+\end{center}
+
+\begin{center}
+\begin{lstlisting}[label=listing_help_h2,caption=Файл help.h]
+"на исследуемый файл и файл report. При чтении из файла report в терминале будет\n" \
+"отображаться отчёт о процессах, использующих файл, а при записи в файл числа командой\n\n" \
+"echo номер_сигнала > report\n\n" \
+"всем процессам, использующим файл будет послан сигнал с номером номер_сигнала\n";
+# endif
+
+	\end{lstlisting}
+\end{center}
