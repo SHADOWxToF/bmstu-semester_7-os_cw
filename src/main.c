@@ -1,17 +1,8 @@
 #include <linux/module.h>
-#include <linux/kernel.h>
 #include <linux/proc_fs.h>
-#include <linux/init.h>
-#include <linux/path.h>
-#include <linux/fs_struct.h>
-#include <linux/fs.h>
 #include <linux/namei.h>
-#include <linux/file.h>
 #include <linux/fdtable.h>
-#include <linux/signal.h>
 #include <linux/version.h>
-#include <linux/uaccess.h>
-#include <linux/slab.h>
 
 #include "help.h"
 #include "list.h"

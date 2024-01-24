@@ -16,7 +16,6 @@ int main()
         fd[i] = fopen("qwerty.txt", "r");
     char c;
     scanf("%c", &c);
-    // fprintf(fd, "%s\n", "qwert");
     for (int i = 0; i < 10; ++i)
         fclose(fd[i]);
     if (flag)
