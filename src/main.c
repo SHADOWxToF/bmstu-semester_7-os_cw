@@ -58,7 +58,8 @@ static struct dentry_library
 
 static char command_info[10 * MAX_FILE_LEN + 1];
 
-static struct dentry *get_dentry_from_pathname(const char *pathname) {
+static struct dentry *get_dentry_from_pathname(const char *pathname) 
+{
     struct path path;
     int error = kern_path(pathname, LOOKUP_FOLLOW, &path);
     if (!error)
@@ -80,7 +81,7 @@ static ssize_t report_write(struct file *file, const char __user *ubuf, size_t c
         char kbuf[10 * MAX_FILE_LEN + 1];
         if (copy_from_user(kbuf, ubuf, count))
         {
-            sprintf(command_info, "Не удалось скопировать данный из пользовательского режима\n");
+            sprintf(command_info, "Не удалось скопировать данные из пользовательского режима\n");
             return -EFAULT;
         }
         kbuf[count - 1] = 0;
@@ -188,7 +189,7 @@ static ssize_t command_write(struct file *file, const char __user *ubuf, size_t 
         remove_proc_entry(dentry->d_name.name, main_dir);
         status = -ENOMEM;
     }
-    else if (!(report_file = proc_create("report", 0666, dir, &report_ops)))
+    else if (!(report_file = proc_create("report", 0646, dir, &report_ops)))
     {
         remove_proc_entry("symlink", dir);
         remove_proc_entry(dentry->d_name.name, main_dir);
@@ -259,13 +260,6 @@ static int myrelease(struct inode *inode, struct file *file)
 
 
 #ifdef HAVE_PROC_OPS
-static struct proc_ops myops = 
-{
-	.proc_read = help_read,
-	.proc_write = command_write,
-    .proc_open = myopen,
-    .proc_release = myrelease,
-};
 static struct proc_ops help_ops = 
 {
 	.proc_read = help_read,
@@ -287,13 +281,6 @@ static struct proc_ops report_ops =
     .proc_release = myrelease,
 };
 #else
-static struct file_operations myops =
-{
-    .read = help_read,
-    .write = command_write,
-    .open = myopen,
-    .release = myrelease,
-};
 static struct file_operations help_ops =
 {
     .read = help_read,
@@ -334,7 +321,7 @@ static int __init myinit(void)
         remove_proc_entry(MAIN_DIR, NULL);
         return -ENOMEM;
     }
-    if (!(command_file = proc_create(COMMAND_FILE, 0666, main_dir, &command_ops)))
+    if (!(command_file = proc_create(COMMAND_FILE, 0646, main_dir, &command_ops)))
     {
         free_proc_file_list(&proc_file_list);
         remove_proc_entry(HELP_FILE, NULL);
@@ -361,3 +348,10 @@ static void __exit myexit(void)
 
 module_init(myinit);
 module_exit(myexit);
+
+/*
+рисунок сокращать до рис.
+разбитые листинги с одинаковым названием
+не использовать слово "поле"
+пункт 4.2 ИССЛЕДОВАНИЕ работы программы
+*/

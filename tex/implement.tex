@@ -1,0 +1,301 @@
+\chapter{Технологический раздел}
+
+\section{Выбор языка и среды программирования}
+
+Для реализации ПО был выбран язык программирования Cи~\cite{c}, поскольку в нём есть все инструменты для реализации загружаемого модуля ядра. Средой программирования послужил графический редактор Visual Studio Code~\cite{vscode}, так как в нём много плагинов, улучшающих процесс разработки.
+
+\section{Реализация загружаемого модуля}
+
+В листингах \ref{listing_init1}--\ref{listing_init2} представлена функция загрузки модуля, а в листинге \ref{listing_exit} функция выгрузки модуля.
+
+\begin{center}
+	\begin{lstlisting}[label=listing_init1,caption=Функция загрузки модуля]
+static int __init myinit(void)
+{   
+	command_info[0] = 0;
+	if (alloc_proc_file_list(&proc_file_list, 10, 2))
+	{
+		return -ENOMEM;
+	}
+	if (!(main_dir = proc_mkdir(MAIN_DIR, NULL)))
+	{
+		free_proc_file_list(&proc_file_list);
+		return -ENOMEM;
+	}
+	if (!(help_file = proc_create(HELP_FILE, 0444, main_dir, &help_ops)))
+	{
+		free_proc_file_list(&proc_file_list);
+		remove_proc_entry(MAIN_DIR, NULL);
+		return -ENOMEM;
+	}
+	if (!(command_file = proc_create(COMMAND_FILE, 0646, main_dir, &command_ops)))
+	{
+		free_proc_file_list(&proc_file_list);
+	\end{lstlisting}
+\end{center}
+
+\begin{center}
+	\begin{lstlisting}[label=listing_init2,caption=Функция загрузки модуля]
+		remove_proc_entry(HELP_FILE, NULL);
+		remove_proc_entry(MAIN_DIR, NULL);
+		return -ENOMEM;
+	}
+	proc_file_list_append(&proc_file_list, MAIN_DIR, NULL);
+	proc_file_list_append(&proc_file_list, HELP_FILE, main_dir);
+	proc_file_list_append(&proc_file_list, COMMAND_FILE, main_dir);
+	return 0;
+}
+	\end{lstlisting}
+\end{center}
+
+\begin{center}
+\begin{lstlisting}[label=listing_exit,caption=Функция выгрузки модуля]
+static void __exit myexit(void)
+{
+	proc_file_t *pfile;
+	while ((pfile = proc_file_list_pop(&proc_file_list)))
+	{ 
+		remove_proc_entry(pfile->name, pfile->parent);
+		kfree(pfile->name);
+		kfree(pfile);
+	}
+	free_proc_file_list(&proc_file_list);
+}
+	\end{lstlisting}
+\end{center}
+
+В листингах \ref{listing_command_write1}--\ref{listing_command_write2} представлена функция записи в файл command.
+
+\begin{center}
+	\begin{lstlisting}[label=listing_command_write1,caption=Функция записи в файл command]
+static ssize_t command_write(struct file *file, const char __user *ubuf, size_t count, loff_t *ppos) 
+{
+	if (dentry_library.len == MAX_LIBRARY_LEN)
+	{
+		sprintf(command_info, "Невозможно отслеживать более %d файлов\n", MAX_LIBRARY_LEN);
+		return count;
+	}
+	char kbuf[10 * MAX_FILE_LEN + 1];
+	if (copy_from_user(kbuf, ubuf, count))
+	return -EFAULT;
+	\end{lstlisting}
+\end{center}
+
+\begin{center}
+	\begin{lstlisting}[label=listing_command_write2,caption=Функция записи в файл command]
+	kbuf[count - 1] = 0;
+	struct dentry *dentry = get_dentry_from_pathname(kbuf);
+	struct proc_dir_entry *dir;
+	struct proc_dir_entry *report_file;
+	int status = 0;
+	if (!dentry)
+	sprintf(command_info, "Данного пути не существует в системе");
+	else if (!(dir = proc_mkdir(dentry->d_name.name, main_dir)))
+	status = -ENOMEM;
+	else if (!(proc_symlink("symlink", dir, kbuf)))
+	{
+		remove_proc_entry(dentry->d_name.name, main_dir);
+		status = -ENOMEM;
+	}
+	else if (!(report_file = proc_create("report", 0646, dir, &report_ops)))
+	{
+		remove_proc_entry("symlink", dir);
+		remove_proc_entry(dentry->d_name.name, main_dir);
+		status = -ENOMEM;
+	}
+	else if (status)
+	sprintf(command_info, "Ошибка при создании директорий\n");
+	else
+	{
+		proc_file_list_append(&proc_file_list, dentry->d_name.name, main_dir);
+		proc_file_list_append(&proc_file_list, "symlink", dir);
+		proc_file_list_append(&proc_file_list, "report", dir);
+		dentry_library.array[(dentry_library.len)++] = dentry;
+		sprintf(command_info, "Путь распознан. Создана папка %s, proc_dir_entry=%p\n", dentry->d_name.name, (void *) report_file);
+	}
+	return count;
+}
+	\end{lstlisting}
+\end{center}
+
+\pagebreak
+
+В листингах \ref{listing_report_read1}--\ref{listing_report_read2} представлена функция чтения из файла report.
+
+\begin{center}
+	\begin{lstlisting}[label=listing_report_read1,caption=Функция чтения из файла report]
+static ssize_t report_read(struct file *file, char __user *ubuf,size_t count, loff_t *ppos)
+{
+	if (*ppos > 0)
+	return 0;
+	
+	int len = 0;
+	char message[20 * MAX_FILE_LEN + 1];
+	
+	int i = 0;
+	while (i < dentry_library.len && strcmp(dentry_library.array[i]->d_name.name, file->f_path.dentry->d_parent->d_name.name))
+	++i;
+	struct dentry *dentry = dentry_library.array[i];
+	if (!dentry)
+	{
+		sprintf(command_info, "Что - то пошло не так\n");
+		len += sprintf(message, "Что - то пошло не так\n");
+	}
+	else
+	{
+		sprintf(command_info, "Команда выполнена успешно\n");
+		len += sprintf(message + len, "%7s %7s %7s %7s %7s %7s\n", "PPID", "PID", "FD", "PRIO", "STATE", "COMMAND");
+		struct task_struct *task = &init_task;
+		do
+		{
+			struct files_struct *files = task->files;
+			struct fdtable *fdt = files->fdt;
+			if (fdt && files)
+			{
+				for (int i = 0; i < files->next_fd; ++i)
+				{
+					struct file *f = (fdt->fd)[i];
+					if (f->f_path.dentry == dentry)
+					{
+\end{lstlisting}
+\end{center}
+
+\begin{center}
+	\begin{lstlisting}[label=listing_report_read2,caption=Функция чтения из файла report]
+						len += sprintf(message + len, "%7d %7d %7d %7d %7d %s\n", task->parent->pid, task->pid, i, task->prio, task->__state, task->comm);
+					}
+				}
+			}
+		}
+		while ((task = next_task(task)) != &init_task);
+	}
+	if (copy_to_user(ubuf, message, len))
+	return -EFAULT;
+	*ppos += len;
+	return len;
+}
+	\end{lstlisting}
+\end{center}
+
+В листингах \ref{listing_report_write1}--\ref{listing_report_write2} представлена функция записи в файл report.
+
+\begin{center}
+	\begin{lstlisting}[label=listing_report_write1,caption=Функция записи в файл report]
+static ssize_t report_write(struct file *file, const char __user *ubuf, size_t count, loff_t *ppos)
+{
+	int i = 0;
+	while (i < dentry_library.len && strcmp(dentry_library.array[i]->d_name.name, file->f_path.dentry->d_parent->d_name.name))
+	++i;
+	struct dentry *dentry = dentry_library.array[i];
+	if (!dentry)
+	sprintf(command_info, "Что - то пошло не так\n");
+	else
+	{
+		char kbuf[10 * MAX_FILE_LEN + 1];
+		if (copy_from_user(kbuf, ubuf, count))
+		{
+			sprintf(command_info, "Не удалось скопировать данные из пользовательского режима\n");
+			return -EFAULT;
+		}
+		kbuf[count - 1] = 0;
+	\end{lstlisting}
+\end{center}
+
+\begin{center}
+	\begin{lstlisting}[label=listing_report_write2,caption=Функция записи в файл report]		
+		long sig;
+		int res = kstrtol(kbuf, 10, &sig);
+		if (res)
+		{
+			sprintf(command_info, "Введены некорректные данные\n");
+			return res;
+		}
+		struct task_struct *task = &init_task;
+		do
+		{
+			struct files_struct *files = task->files;
+			struct fdtable *fdt = files->fdt;
+			if (fdt && files)
+			{
+				int signalize = 0;
+				for (int i = 0; !res && i < files->next_fd; ++i)
+				{
+					struct file *f = (fdt->fd)[i];
+					if (f->f_path.dentry == dentry)
+					{
+						signalize = 1;
+					}
+				}
+				if (signalize)
+				res = send_sig_info(sig, 1, task);
+			}
+		}
+		while (!res && (task = next_task(task)) != &init_task);
+	}
+	sprintf(command_info, "Команда выполнена успешно\n");
+	return count;
+}
+	\end{lstlisting}
+\end{center}
+
+Для файлов были созданы экземпляры структуры proc\_ops, они представлены в листинге \ref{listing_proc_ops_c}.
+
+\pagebreak
+
+\begin{center}
+	\begin{lstlisting}[label=listing_proc_ops_c,caption=Экземпляры структуры proc\_ops]		
+static struct proc_ops help_ops = 
+{
+	.proc_read = help_read,
+	.proc_open = myopen,
+	.proc_release = myrelease,
+};
+static struct proc_ops command_ops = 
+{
+	.proc_read = command_read,
+	.proc_write = command_write,
+	.proc_open = myopen,
+	.proc_release = myrelease,
+};
+static struct proc_ops report_ops = 
+{
+	.proc_read = report_read,
+	.proc_write = report_write,
+	.proc_open = myopen,
+	.proc_release = myrelease,
+};
+\end{lstlisting}
+\end{center}
+
+Весь код программы представлен в Приложении А.
+
+Для компиляции использовался makefile с наполнением, представленным в листингах \ref{listing_makefile1}--\ref{listing_makefile2}.
+\begin{center}
+	\begin{lstlisting}[label=listing_makefile1,caption=Makefile проекта]		
+TARGET := finder
+OBJS := main.o list.o
+obj-m += $(TARGET).o
+$(TARGET)-objs := $(OBJS)
+
+KDIR ?= /lib/modules/$(shell uname -r)/build
+
+ccflags-y += -std=gnu18 -Wall
+
+all:
+	make -C $(KDIR) M=$(shell pwd) modules
+	\end{lstlisting}
+\end{center}
+
+\begin{center}
+	\begin{lstlisting}[label=listing_makefile2,caption=Makefile проекта]		
+$(TARGET).o: $(OBJS)
+	$(LD) -r -o $@ $(OBJS)
+
+reader:
+	gcc -o reader.out reader.c
+
+clean:
+	make -C $(KDIR) M=$(shell pwd) clean
+	\end{lstlisting}
+\end{center}
+

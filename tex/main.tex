@@ -1,0 +1,22 @@
+\documentclass[ut8x, 14pt, oneside, a4paper]{report}
+
+\include{settings}
+
+\begin{document}
+	
+	\includepdf[pages=1]{title}
+	\includepdf[pages=2]{title}
+%	\includepdf[pages=2]{title}
+	
+	\setcounter{page}{3}
+	\include{contents}
+	\include{introd}
+	\include{analysis}
+	\include{design}
+	\include{implement}
+	\include{research}
+	\include{conclusion}
+	\include{lib}
+	\include{pres}
+	
+\end{document}

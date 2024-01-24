@@ -6,3 +6,10 @@
 *.symvers
 *.order
 *.out
+*.aux
+*.sty
+*.log
+*.bbl
+*.blg
+*.gz
+*.toc

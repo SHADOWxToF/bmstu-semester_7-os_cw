@@ -1,0 +1,286 @@
+\chapter{Аналитический раздел}
+
+\section{Постановка задачи}
+
+В соответствии с техническим заданием на курсовую работу необходимо разработать загружаемый модуль ядра для получения информации о процессах, которые используют заданный пользователем файл. 
+Также необходимо обеспечить возможность посылки сигналов рассматриваемым процессам. 
+Для решения поставленной задачи необходимо:
+\begin{enumerate}[label=\arabic*.]
+	\item провести анализ структур и функций, предоставляющих возможность реализовать поставленную задачу;
+	\item разработать алгоритмы и структуру загружаемого модуля ядра, в соответствии с поставленной задачей;
+	\item реализовать спроектированный модуль ядра;
+	\item протестировать работу реализованного модуля ядра.
+\end{enumerate}
+
+К разрабатываемой программе предъявляются следующие требования:
+\begin{enumerate}[label=\arabic*.]
+	\item взаимодействие с загружаемым модулем должно происходить из пространства пользователя;
+	\item необходимо передавать данные из пространства ядра в пространство пользователя или наоборот.
+\end{enumerate}
+
+Программа будет разрабатываться для операционной системы Ubuntu~\cite{ubuntu} версии 20.04.4. 
+В связи с этим она может не поддерживаться на более ранних версиях или на других операционных системах.
+
+\section{Анализ структур ядра}
+
+\subsection{struct task\_struct}
+
+task\_struct --- структура ядра, описывающая процесс в операционной системе. 
+Она содержит всю информацию, необходимую ядру для управления процессом.
+В листинге \ref{listing_task} представлены необходимые для решения задачи фрагменты структуры task\_struct~\cite{task_struct}.
+
+\begin{center}
+	\begin{lstlisting}[label=listing_task,caption=Структура task\_struct]
+struct task_struct {
+// ...
+unsigned int __state;
+// ...
+int prio;
+// ...
+pid_t pid;
+// ...
+struct task_struct __rcu *parent;
+// ...
+char comm[TASK_COMM_LEN];
+// ...
+struct files_struct *files;
+// ...
+	\end{lstlisting}
+\end{center}
+
+Подробное описание представленного фрагмента структуры task\_struct:
+\begin{enumerate}
+	\item \_\_state --- состояние процесса;
+	\item prio --- приоритет процесса;
+	\item pid --- идентификатор процесса;
+	\item parent --- указатель на структуру родительского процесса;
+	\item comm --- имя исполняемого файла;
+	\item files --- указатель на структуру, содержащую информацию об открытых файлах.
+\end{enumerate}
+
+Для получения файловых дескрипторов процесса необходимо рассмотреть структуру files\_struct~\cite{lsc}.
+В листингах \ref{listing_files_struct1}--\ref{listing_files_struct2} она полностью приведена.
+
+\begin{center}
+	\begin{lstlisting}[label=listing_files_struct1,caption=Структура files\_struct]
+struct files_struct {
+	atomic_t count;
+	bool resize_in_progress;
+	\end{lstlisting}
+\end{center}
+
+\begin{center}
+	\begin{lstlisting}[label=listing_files_struct2,caption=Структура files\_struct]
+	wait_queue_head_t resize_wait;
+	
+	struct fdtable __rcu *fdt;
+	struct fdtable fdtab;
+
+	spinlock_t file_lock ____cacheline_aligned_in_smp;
+	unsigned int next_fd;
+	unsigned long close_on_exec_init[1];
+	unsigned long open_fds_init[1];
+	unsigned long full_fds_bits_init[1];
+	struct file __rcu * fd_array[NR_OPEN_DEFAULT];
+};
+	\end{lstlisting}
+\end{center}
+
+В данной структуре особого внимания заслуживает указатель fdt на структуру fdtable, именно в ней находится массив fd, содержащий структуры открытых файлов file для данного процесса.
+Ниже представлен листинг структуры fdtable~\cite{lsc}.
+\begin{center}
+	\begin{lstlisting}[label=listing_fdtable,caption=Структура fdtable]
+struct fdtable {
+	unsigned int max_fds;
+	struct file __rcu **fd;
+	unsigned long *close_on_exec;
+	unsigned long *open_fds;
+	unsigned long *full_fds_bits;
+	struct rcu_head rcu;
+};
+\end{lstlisting}
+\end{center}
+
+\subsection{struct file}
+
+struct file~\cite{file} --- структура ядра, описывающая открытый файл. В листингах \ref{listing_file1}--\ref{listing_file2} полностью представлена данная структура.
+\begin{center}
+	\begin{lstlisting}[label=listing_file1,caption=Структура file]
+struct file {
+	union {
+		struct llist_node	f_llist;
+		struct rcu_head 	f_rcuhead;
+\end{lstlisting}
+\end{center}
+
+\begin{center}
+	\begin{lstlisting}[label=listing_file2,caption=Структура file]
+		unsigned int 		f_iocb_flags;
+	};
+	
+	spinlock_t		f_lock;
+	fmode_t			f_mode;
+	atomic_long_t		f_count;
+	struct mutex		f_pos_lock;
+	loff_t			f_pos;
+	unsigned int		f_flags;
+	struct fown_struct	f_owner;
+	const struct cred	*f_cred;
+	struct file_ra_state	f_ra;
+	struct path		f_path;
+	struct inode		*f_inode;
+	const struct file_operations	*f_op;
+	
+	u64			f_version;
+	#ifdef CONFIG_SECURITY
+	void			*f_security;
+	#endif
+	void			*private_data;
+	
+	#ifdef CONFIG_EPOLL
+	
+	struct hlist_head	*f_ep;
+	#endif
+	struct address_space	*f_mapping;
+	errseq_t		f_wb_err;
+	errseq_t		f_sb_err;
+};
+	\end{lstlisting}
+\end{center}
+
+Для получения информации о том, какой файл представляет данная структура необходимо получить структуру dentry. Указатель на неё можно найти в структуре path, которая содержится в структуре file.
+В листинге \ref{listing_path} представлена структура path~\cite{lsc}.
+
+\pagebreak
+
+\begin{center}
+	\begin{lstlisting}[label=listing_path,caption=Структура path]
+struct path {
+	struct vfsmount *mnt;
+	struct dentry *dentry;
+};
+\end{lstlisting}
+\end{center}
+
+\section{Анализ системных вызовов}
+
+\subsection{Системный вызов kern\_path}
+
+Пользователь загружаемого модуля будет передавать полный путь до файла, который он желает отследить, то есть найти все процессы, которые на момент запроса используют данный файл.
+По этой причине необходимо получить по полному имени файла указатель на структуру dentry данного файла.
+Данный функционал предоставляет системный вызов kern\_path, заголовок которого представлен в листинге \ref{listing_kern_path}.
+\begin{center}
+	\begin{lstlisting}[label=listing_kern_path,caption=Заголовок системного вызова kern\_path]
+int kern_path(const char *name, unsigned int flags, struct path *path);
+	\end{lstlisting}
+\end{center}
+На вход kern\_path принимает name --- имя файла; flags --- флаги поиска элемента пути; path --- структура path с результатом поиска.
+Системный вызов возвращает 0 в случае успеха и код ошибки при неудаче.
+
+\subsection{Системный вызов send\_sig\_info}
+
+В соответствии с заданием необходимо предоставить возможность посылать сигналы процессам, использующим заданный файл.
+Данный функционал предоставляет системный вызов send\_sig\_info, заголовок которого представлен в листинге \ref{listing_send_sig_info}.
+\begin{center}
+	\begin{lstlisting}[label=listing_send_sig_info,caption=Заголовок системного вызова send\_sig\_info]
+int send_sig_info(int sig, struct siginfo *info, struct task_struct *p)
+	\end{lstlisting}
+\end{center}
+На вход send\_sig\_info принимает sig --- номер сигнала; info --- структура, содержащая информацию о сигнале, возможно вместо структуры передать одно из двух числовых значений~\cite{send_signal}: 0, если сигнал послан из пространства пользователя, или 1, если сигнал послан из пространства ядра; p --- структура процесса, которому отправляется сигнал.
+Системный вызов возвращает 0 в случае успеха и код ошибки при неудаче.
+
+\subsection{Системный вызов copy\_from\_user}
+
+В соответствии с требованиями необходимо передавать данные из пространства пользователя в пространство ядра.
+Данный функционал предоставляет системный вызов copy\_from\_user, заголовок которого представлен в листинге \ref{listing_copy_from_user}.
+\begin{center}
+	\begin{lstlisting}[label=listing_copy_from_user,caption=Заголовок системного вызова copy\_from\_user]
+long copy_from_user(void *to, const void __user *from, long n);
+	\end{lstlisting}
+\end{center}
+На вход copy\_from\_user принимает to --- указатель на память в пространстве ядра, в которую будет осуществлено копирование; from --- указатель на память в пространстве пользователя, из которой будет осуществлено копирование; n --- размер копируемых данных.
+Системный вызов возвращает 0 в случае успеха и ненулевое значение при неудаче.
+
+\subsection{Системный вызов copy\_to\_user}
+
+В соответствии с требованиями необходимо передавать данные из пространства ядра в пространство пользователя.
+Данный функционал предоставляет системный вызов copy\_to\_user, заголовок которого представлен в листинге \ref{listing_copy_to_user}.
+\begin{center}
+	\begin{lstlisting}[label=listing_copy_to_user,caption=Заголовок системного вызова copy\_to\_user]
+		long copy_to_user(void __user *to, const void *from, long n);
+	\end{lstlisting}
+\end{center}
+На вход copy\_to\_user принимает to --- указатель на память в пространстве пользователя, в которую будет осуществлено копирование; from --- указатель на память в пространстве ядра, из которой будет осуществлено копирование; n --- размер копируемых данных.
+Системный вызов возвращает 0 в случае успеха и ненулевое значение при неудаче.
+
+\section{Интерфейс взаимодействия с модулем}
+
+
+Для взаимодействия с модулем ядра из пространства пользователя будут использоваться файлы, созданные в /proc.
+/proc --- интерфейс, предоставляющий доступ к структурам ядра. Передача информации будет достигатся при помощи привычных обращений чтения и записи к файлам.
+
+\subsection{struct proc\_ops}
+
+Для файлов, созданных в /proc сущетсвует специальная структура proc\_ops, содержащая указатели на функции взаимодействия с файлом, такие как открытие, закрытие, чтение и запись, заменяющая аналогичную структуру file\_operations для файлов на диске.
+В листинге \ref{listing_proc_ops} представлена структура proc\_ops.
+
+\begin{center}
+	\begin{lstlisting}[label=listing_proc_ops,caption=Структура proc\_ops]
+struct proc_ops {
+	unsigned int proc_flags;
+	int	(*proc_open)(struct inode *, struct file *);
+	ssize_t	(*proc_read)(struct file *, char __user *, size_t, loff_t *);
+	ssize_t (*proc_read_iter)(struct kiocb *, struct iov_iter *);
+	ssize_t	(*proc_write)(struct file *, const char __user *, size_t, loff_t *);
+	loff_t	(*proc_lseek)(struct file *, loff_t, int);
+	int	(*proc_release)(struct inode *, struct file *);
+	__poll_t (*proc_poll)(struct file *, struct poll_table_struct *);
+	long	(*proc_ioctl)(struct file *, unsigned int, unsigned long);
+	#ifdef CONFIG_COMPAT
+	long	(*proc_compat_ioctl)(struct file *, unsigned int, unsigned long);
+	#endif
+	int	(*proc_mmap)(struct file *, struct vm_area_struct *);
+	unsigned long (*proc_get_unmapped_area)(struct file *, unsigned long, unsigned long, unsigned long, unsigned long);
+};
+	\end{lstlisting}
+\end{center}
+
+Для изменения поведения файла при чтении или записи необходимо создать экземпляр структуры со своими функциями чтения и записи.
+
+
+
+\subsection{системный вызов proc\_mkdir}
+
+Системный вызов proc\_mkdir создаёт в /proc директорию.
+Его заголовок представлен в листинге \ref{listing_proc_mkdir}.
+\begin{center}
+	\begin{lstlisting}[label=listing_proc_mkdir,caption=Заголовок системного вызова proc\_mkdir]
+struct proc_dir_entry *proc_mkdir(const char *name, struct proc_dir_entry *parent);
+	\end{lstlisting}
+\end{center}
+На вход proc\_mkdir принимает name --- имя создаваемой директории; parent --- указатель на структуру proc\_dir\_entry, описывающую родительскую директорию, если равно NULL, то директория создаётся в корне.
+Системный вызов возвращает указатель на структуру proc\_dir\_entry созданной директории в случае успеха и NULL при неудаче.
+
+\subsection{системный вызов proc\_mkdir}
+
+Системный вызов proc\_create создаёт в /proc файл.
+Его заголовок представлен в листинге \ref{listing_proc_create}.
+\begin{center}
+	\begin{lstlisting}[label=listing_proc_create,caption=Заголовок системного вызова proc\_create]
+struct proc_dir_entry *proc_create(const char *name, umode_t mode, struct proc_dir_entry *parent,const struct file_operations *proc_fops);
+	\end{lstlisting}
+\end{center}
+На вход proc\_create принимает name --- имя создаваемого файла; parent --- указатель на структуру proc\_dir\_entry, описывающую родительскую директорию, если равно NULL, то файл создаётся в корне; proc\_fops --- указатель на структуру с функциями работы с файлом.
+Системный вызов возвращает указатель на структуру proc\_dir\_entry созданного файла в случае успеха и NULL при неудаче.
+
+\subsection{системный вызов proc\_symlink}
+
+Системный вызов proc\_symlink создаёт в /proc символическую ссылку.
+Его заголовок представлен в листинге \ref{listing_proc_symlink}.
+\begin{center}
+	\begin{lstlisting}[label=listing_proc_symlink,caption=Заголовок системного вызова proc\_symlink]
+struct proc_dir_entry *proc_symlink(const char *name,struct proc_dir_entry *parent,const char *dest);
+	\end{lstlisting}
+\end{center}
+На вход proc\_symlink принимает name --- имя создаваемой символической ссылки; parent --- указатель на структуру proc\_dir\_entry, описывающую родительскую директорию, если равно NULL, то символическая ссылка создаётся в корне; dest --- имя файла, для которого создаётся символическая ссылка.
+Системный вызов возвращает указатель на структуру proc\_dir\_entry созданной символической сслыки в случае успеха и NULL при неудаче.

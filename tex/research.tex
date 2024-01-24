@@ -1,0 +1,62 @@
+\chapter{Исследовательский раздел}
+
+\section{Технические характеристики}
+
+Технические характеристики устройства, на котором запускалась программа:
+
+\begin{enumerate}[label=\arabic*.]
+	\item операционная система Ubuntu, 20.04.4 \cite{ubuntu};
+	\item память 8 ГБ;
+	\item процессор 2,4 ГГц 4‑ядерный процессор Intel Core i5-1135G7 \cite{intel}.
+\end{enumerate}
+
+\section{Исследование работы программы}
+
+Для исследования работы была разработана вспомогательная программа, которая открывает 10 раз один и тот же файл, а потом прерывается в ожидании ввода. Код вспомогательной программы представлен в листинге \ref{listing_help_program1}--\ref{listing_help_program2}.
+
+\begin{center}
+	\begin{lstlisting}[label=listing_help_program1,caption=Вспомогательная программа]
+# include <stdio.h>
+# include <signal.h>
+
+int flag = 0;
+
+void handler(int s)
+{
+	flag = 1;
+}
+
+int main()
+{
+	signal(SIGINT, handler);
+	FILE *fd[10];
+	for (int i = 0; i < 10; ++i)
+		fd[i] = fopen("qwerty.txt", "r");
+	char c;
+	scanf("%c", &c);
+	for (int i = 0; i < 10; ++i)
+	\end{lstlisting}
+\end{center}
+
+\begin{center}
+	\begin{lstlisting}[label=listing_help_program2,caption=Вспомогательная программа]
+		fclose(fd[i]);
+	if (flag)
+		printf("Процесс принял сигнал SIGINT\n");
+	return 0;
+}
+	\end{lstlisting}
+\end{center}
+
+На рисунке \ref{} продемонстрирована работа загружамого модуля:
+\begin{enumerate}[label=\arabic*.]
+	\item sudo indmod finder.ko --- загрузка модуля;
+	\item cd /proc/finder --- переход в рабочую директорию модуля;
+	\item echo "/home/alex/Bomonka/Semester\_7/Operating\_systems/bmstu-semester\_7-os\_cw/src/qwerty.txt" $>$ command --- создание папки для отслеживания заданного файла;
+	\item cd qwerty.txt --- переход в папку отслеживания;
+	\item cat report --- чтение файла report;
+	\item echo "2" $>$ report --- посылка сигнала процессам;
+	\item sudo rmmod finder --- выгрузка модуля.
+\end{enumerate}
+
+На рисунке \ref{} продемонстрирован приём сигнала вспомогательной программой.
